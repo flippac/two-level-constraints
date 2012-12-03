@@ -22,7 +22,7 @@ data UnificationError t = OccursCheck MVIdentifier t | Mismatch t t
 unify :: TermLevel t =>  MetaTerm t -> MetaTerm t -> 
                          Assignment (MetaTerm t) -> 
                           Either (UnificationError (MetaTerm t)) 
-                                 (MetaType t, Assignment (MetaTerm t))
+                                 (MetaTerm t, Assignment (MetaTerm t))
 unify mv@(Metavar mv1) (Metavar mv2) a | mv1 == mv2 = return (mv, a)
 unify (Metavar mv) t a = case lookup mv a of
                            Nothing -> case occurs mv a t of
