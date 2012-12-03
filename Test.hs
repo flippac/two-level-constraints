@@ -1,18 +1,19 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, FlexibleInstances, 
-             MultiParamTypeClasses #-}
+             MultiParamTypeClasses, PolyKinds #-}
 
 module Test where
 
 import Data.Map
 import Control.Monad.Trans
+import Control.Applicative
 
 import TwoLevelTerms
 import MetaTerm
 import ConstraintStore
 
 data Monotype fix = Prim TVar | 
-                    TApp (Monotype fix) (Monotype fix) | 
-                    Fun (Monotype fix) (Monotype fix)
+                    TApp fix fix | 
+                    Fun fix fix
 data Polytype mt = Forall [TVar] mt
 
 type TVar = String
@@ -32,3 +33,36 @@ instance Allocs (MetaTerm Monotype) HMProblem where
 instance Allocs (FlatMeta (Polytype (MetaTerm Monotype))) HMProblem where
   newVar = HMP $ lift newVar
   withVar = (newVar >>=)
+
+runHMP (HMP f) = runNameSupply 0 (
+                   runStoreT Data.Map.empty (
+                    runStoreT Data.Map.empty f
+                   )
+                 )
+
+data Term = Var String | 
+            App Term Term | 
+            Lam String Term | 
+            Let String Term Term
+
+mtEquals :: MetaTerm Monotype -> MetaTerm Monotype -> HMProblem ()
+l `mtEquals` r = undefined
+generalise :: MetaTerm Monotype -> 
+              HMProblem (FlatMeta (Polytype (MetaTerm Monotype)))
+generalise mty = undefined
+instantiate :: FlatMeta (Polytype (MetaTerm Monotype)) -> 
+               HMProblem (MetaTerm Monotype)
+instantiate pty = undefined
+            
+infer (Var s) env = case Prelude.lookup s env of
+                      Nothing -> error $ "Unbound variable " ++ s
+                      Just pt -> instantiate pt
+infer (App f p) env = withVar (\rt ->
+                        do ft <- infer f env
+                           pt <- infer p env
+                           ft `mtEquals` liftMeta (pt `Fun` rt)
+                           return rt
+                        )
+infer (Lam i t) env = withVar (\pt -> infer t ((i,liftMeta $ Forall [] pt):env))
+infer (Let i t b) env = do pty <- infer t env >>= generalise
+                           infer b ((i, pty) : env)

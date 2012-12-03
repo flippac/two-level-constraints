@@ -1,5 +1,5 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving, MultiParamTypeClasses,
-             FlexibleInstances #-}
+             FlexibleInstances, NoMonomorphismRestriction #-}
 
 module ConstraintStore where
 
@@ -45,7 +45,10 @@ newtype StoreT t m a = S (StateT (Assignment t) m a)
 examine v = S $ gets $ lookup v
 update v t = S $ modify $ insert v t
 
-runStoreT (S f) a = runStateT f a
+getAssignment = S get
+putAssignment = S . put
+
+runStoreT a (S f) = runStateT f a
 
 instance Names m => Names (StoreT t m) where
   genSym = lift genSym
