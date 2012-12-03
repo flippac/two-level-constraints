@@ -28,7 +28,7 @@ type NameSupply = NameSupplyT Identity
 
 instance (Monad m) => Names (NameSupplyT m) where
   genSym = NS $ do i <- get
-                   put $ i+1
+                   put $! i+1
                    return i
            -- NS $ get <* modify (+1) - neater, but welcome to instance hell
 
