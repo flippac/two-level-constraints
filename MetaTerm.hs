@@ -1,10 +1,12 @@
 {-# LANGUAGE StandaloneDeriving, MultiParamTypeClasses, FlexibleInstances,
              UndecidableInstances #-}
 
-module MetaTerm (MetaTerm, FlatMeta,
+module MetaTerm (MetaTerm(..), FlatMeta(..),
                  subst, metavars, deepMetavars, occurs) where
 
-import Data.List
+import Prelude hiding (lookup)
+import Data.List (nub)
+import Data.Map
 
 import TwoLevelTerms
 
@@ -54,6 +56,8 @@ metavars :: TermLevel t => MetaTerm t -> [MVIdentifier]
 metavars (Metavar mv) = [mv]
 metavars (O o) = nub $ foldChildren (++) [] (mapChildren metavars o)
 
+deepMetavars :: TermLevel t => 
+                  Assignment (MetaTerm t) -> MetaTerm t -> [MVIdentifier]
 deepMetavars a t = deepMetavars' a [] t
   where deepMetavars' a visited (Metavar mv) 
           | mv `elem` visited = []
