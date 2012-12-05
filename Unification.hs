@@ -18,6 +18,7 @@ import TwoLevelTerms
 import MetaTerm
 
 data UnificationError t = OccursCheck MVIdentifier t | Mismatch t t
+  deriving Show
 
 unify :: TermLevel t =>  MetaTerm t -> MetaTerm t -> 
                          Assignment (MetaTerm t) -> 
