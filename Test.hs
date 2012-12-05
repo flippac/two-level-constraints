@@ -40,11 +40,6 @@ runHMP (HMP f) = runNameSupply 0 (
                    )
                  )
 
-data Term = Var String | 
-            App Term Term | 
-            Lam String Term | 
-            Let String Term Term
-
 mtEquals :: MetaTerm Monotype -> MetaTerm Monotype -> HMProblem ()
 l `mtEquals` r = undefined
 generalise :: MetaTerm Monotype -> 
@@ -52,7 +47,14 @@ generalise :: MetaTerm Monotype ->
 generalise mty = undefined
 instantiate :: FlatMeta (Polytype (MetaTerm Monotype)) -> 
                HMProblem (MetaTerm Monotype)
-instantiate pty = undefined
+instantiate (T (Forall vs mty)) = undefined 
+                                  -- FIXME: needs term-level substitution
+instantiate (Meta mi) = do undefined 
+                 
+data Term = Var String | 
+            App Term Term | 
+            Lam String Term | 
+            Let String Term Term
             
 infer (Var s) env = case Prelude.lookup s env of
                       Nothing -> error $ "Unbound variable " ++ s
