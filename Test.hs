@@ -3,9 +3,12 @@
 
 module Test where
 
-import Data.Map
+import Data.List
+import qualified Data.Map
+import Data.Map (Map, fromList)
+import Control.Monad
 import Control.Monad.Trans
-import Control.Applicative
+-- import Control.Applicative
 
 import TwoLevelTerms
 import MetaTerm
@@ -23,16 +26,30 @@ data Polytype mt = Forall [TVar] mt
 
 type TVar = String
 
-{- Doesn't substitute through metavariables - this is okay for HM because a
-   polytype will either contain no metavariables after generalisation or be
-   lambda-bound and thus not quantified over any type variables -}
-substTVars :: Map TVar (MetaTerm Monotype) -> 
-              MetaTerm Monotype -> 
+instance TermLevel Monotype where
+  mapChildren f (Prim v) = Prim v
+  mapChildren f (TApp l r) = TApp (f l) (f r)
+  mapChildren f (Fun l r) = Fun (f l) (f r)
+  foldChildren c n (Prim v) = n
+  foldChildren c n (TApp l r) = l `c` (r `c` n)
+  foldChildren c n (Fun l r) = l `c` (r `c` n)
+  match (Prim l) (Prim r) | l == r = Just []
+                          | otherwise = Nothing
+  match (TApp l r) (TApp l' r') = Just [(l, l'), (r, r')]
+  match (Fun l r) (Fun l' r') = Just [(l, l'), (r, r')]
+  match _ _ = Nothing
+
+{- Doesn't substitute through metavariables - this is okay for traditionally
+   implemented HM because a polytype will either contain no metavariables after
+   generalisation or be lambda-bound and thus not quantified over any type
+   variables -}
+substTVars :: Map TVar (MetaTerm Monotype) ->
+              MetaTerm Monotype ->
               MetaTerm Monotype
 substTVars a (O t) = substTVars' a t
 substTVars a m@Metavar {} = m
 substTVars' :: Map TVar (MetaTerm Monotype) -> 
-               Monotype (MetaTerm Monotype) -> 
+               Monotype (MetaTerm Monotype) ->
                MetaTerm Monotype
 substTVars' assignment p@(Prim v) = case Data.Map.lookup v assignment of
                                       Nothing -> liftMeta p
@@ -51,7 +68,7 @@ newtype HMProblem a = HMP (StoreT (MetaTerm Monotype)
                              a
                           )
   deriving (Monad)
-  
+
 instance Allocs (MetaTerm Monotype) HMProblem where
   newVar = HMP $ newVar
   withVar = (newVar >>=)
@@ -60,19 +77,58 @@ instance Allocs (FlatMeta (Polytype (MetaTerm Monotype))) HMProblem where
   newVar = HMP $ lift newVar
   withVar = (newVar >>=)
 
-runHMP (HMP f) = runNameSupply 0 (
-                   runStoreT Data.Map.empty (
-                    runStoreT Data.Map.empty f
-                   )
-                 )
+data HMPResult a = HMPResult {result :: a, 
+                              monoStore :: Assignment (MetaTerm Monotype),
+                              polyStore :: Assignment 
+                                             (FlatMeta 
+                                               (Polytype (MetaTerm Monotype))
+                                             ),
+                              varSupply :: Integer}
+  deriving Show
+  
+runHMP (HMP f) = let (((r,ms),ps),c) = runNameSupply 0 (
+                                         runStoreT Data.Map.empty (
+                                           runStoreT Data.Map.empty f
+                                         )
+                                       )
+                  in HMPResult r ms ps c
 
 {- Constraint functions - all solving done on-the-spot -}
 
 mtEquals :: MetaTerm Monotype -> MetaTerm Monotype -> HMProblem ()
-l `mtEquals` r = undefined
-generalise :: MetaTerm Monotype -> 
+l `mtEquals` r = HMP $ do a <- getAssignment
+                          case unify l r a of
+                            Left e -> error $ show e
+                            Right (_, a') -> putAssignment a'
+
+generalise :: [(String, FlatMeta (Polytype (MetaTerm Monotype)))] ->
+              MetaTerm Monotype ->
               HMProblem (FlatMeta (Polytype (MetaTerm Monotype)))
-generalise mty = undefined
+generalise env mty = 
+  do mtyAssignment <- HMP $ getAssignment
+     ptyAssignment <- HMP $ lift $ getAssignment
+     let mvs = nub $ deepMetavars mtyAssignment mty
+         envMtys :: [MetaTerm Monotype]
+         envMtys = let getMty (T (Forall _  mty)) = mty
+                       getMty (Meta mv) = 
+                         case Data.Map.lookup mv ptyAssignment of
+                           Nothing -> error "unknown polytype lookup"
+                           Just pty -> getMty pty
+                    in map (getMty . snd) env
+         envFreeMetavars = nub . concat $ 
+                             map (deepMetavars mtyAssignment) envMtys
+         genVars = map Metavar (mvs \\ envFreeMetavars)
+         tvars = map (\n -> 't':show n) [0..length genVars]
+         tvarTys = map (O . Prim) tvars
+         mtyAssignment' = let unifyVar l r a = case unify l r a of
+                                                 Left e -> error $ show e
+                                                 Right (_,a') -> a'
+                           in foldr (\(l,r) a -> unifyVar l r a)
+                                    mtyAssignment 
+                                    (zip genVars tvarTys)
+     HMP $ putAssignment mtyAssignment'    
+     return $ T $ Forall tvars mty
+
 instantiate :: FlatMeta (Polytype (MetaTerm Monotype)) -> 
                HMProblem (MetaTerm Monotype)
 instantiate (T (Forall vs mty)) = do metavars <- mapM (const newVar) vs
@@ -90,6 +146,7 @@ data Term = Var String |
             App Term Term | 
             Lam String Term | 
             Let String Term Term
+  deriving Show
 
 {- Typechecker! -}
 
@@ -101,7 +158,13 @@ infer (App f p) env = withVar (\rt ->
                            pt <- infer p env
                            ft `mtEquals` liftMeta (pt `Fun` rt)
                            return rt
-                        )
-infer (Lam i t) env = withVar (\pt -> infer t ((i,liftMeta $ Forall [] pt):env))
-infer (Let i t b) env = do pty <- infer t env >>= generalise
+                      )
+infer (Lam i t) env = withVar (\pt -> 
+                        do rt <- infer t ((i,liftMeta $ Forall [] pt):env)
+                           return $ liftMeta (Fun pt rt)
+                      )
+infer (Let i t b) env = do pty <- infer t env >>= generalise env
                            infer b ((i, pty) : env)
+
+infer' t e = let r = runHMP $ infer t e
+              in subst (monoStore r) (result r)
