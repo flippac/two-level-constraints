@@ -166,5 +166,8 @@ infer (Lam i t) env = withVar (\pt ->
 infer (Let i t b) env = do pty <- infer t env >>= generalise env
                            infer b ((i, pty) : env)
 
-infer' t e = let r = runHMP $ infer t e
-              in subst (monoStore r) (result r)
+infer' t e = let c = do ty <- infer t e
+                        generalise e ty
+                 r = runHMP c
+                 (T (Forall tvs mty)) = result r
+              in subst (monoStore r) mty
