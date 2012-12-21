@@ -32,7 +32,7 @@ instance (Monad m) => Names (NameSupplyT m) where
                    return i
            -- NS $ get <* modify (+1) - neater, but welcome to instance hell
 
-runNameSupplyT n (NS c) = runStateT n c
+runNameSupplyT n (NS c) = runStateT c n
 runNameSupply n c = runIdentity $ runNameSupplyT n c
 
 class Allocs t f where
