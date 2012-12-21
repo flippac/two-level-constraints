@@ -58,14 +58,14 @@ metavars (O o) = nub $ foldChildren (++) [] (mapChildren metavars o)
 
 deepMetavars :: TermLevel t => 
                   Assignment (MetaTerm t) -> MetaTerm t -> [MVIdentifier]
-deepMetavars a t = deepMetavars' a [] t
-  where deepMetavars' a visited (Metavar mv) 
-          | mv `elem` visited = []
+deepMetavars a t = deepMetavars' [] t
+  where deepMetavars' visited (Metavar mv) 
+          | mv `elem` visited = visited
           | otherwise = case lookup mv a of
-                          Nothing -> [mv]
-                          Just t -> deepMetavars' a (mv:visited) t
-        deepMetavars' a v (O o) = foldChildren (\t v -> deepMetavars' a v t) 
-                                               v
-                                               o
+                          Nothing -> mv:visited
+                          Just t -> deepMetavars' (mv:visited) t
+        deepMetavars' v (O o) = foldChildren (\t v -> deepMetavars' v t)
+                                             v
+                                             o
 
 occurs mv assignment t = mv `elem` deepMetavars assignment t
