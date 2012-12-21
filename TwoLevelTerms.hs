@@ -13,7 +13,7 @@ class TermLevel t where
   foldChildren :: (x -> y -> y) -> y -> t x -> y
   match :: t x -> t x -> Maybe [(x,x)]
 
-class MetaLevel (f :: k -> *) (p :: k) v | f -> v p where
+class MetaLevel (f :: k -> *) (p :: k) v | f p -> v where
   mapTerms :: (v -> v) -> f p -> f p
   liftMeta :: v -> f p
 
